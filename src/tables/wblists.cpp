@@ -202,16 +202,3 @@ static const int _Sony_SRF_wb_list[] = {
     LIBRAW_WBI_Tungsten, LIBRAW_WBI_Flash
 };
 libraw_static_table_t LibRaw::Sony_SRF_wb_list(_Sony_SRF_wb_list, _ARR_SZ(_Sony_SRF_wb_list));
-
-static const int _Sony_SR2_wb_list[] = {
-    LIBRAW_WBI_Daylight, LIBRAW_WBI_Cloudy, LIBRAW_WBI_Tungsten, LIBRAW_WBI_Flash,
-    4500, LIBRAW_WBI_Unknown, LIBRAW_WBI_Fluorescent
-};
-libraw_static_table_t LibRaw::Sony_SR2_wb_list(_Sony_SR2_wb_list, _ARR_SZ(_Sony_SR2_wb_list));
-
-static const int _Sony_SR2_wb_list1[] = {
-    LIBRAW_WBI_Daylight, LIBRAW_WBI_Cloudy, LIBRAW_WBI_Tungsten, LIBRAW_WBI_Flash,
-    4500, LIBRAW_WBI_Shade, LIBRAW_WBI_FL_W, LIBRAW_WBI_FL_N, LIBRAW_WBI_FL_D,
-    LIBRAW_WBI_FL_L, 8500, 6000, 3200, 2500
-};
-libraw_static_table_t LibRaw::Sony_SR2_wb_list1(_Sony_SR2_wb_list1, _ARR_SZ(_Sony_SR2_wb_list1));

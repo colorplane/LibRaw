@@ -29,7 +29,6 @@ int LibRaw::parse_tiff_ifd(INT64 base)
   double fm[3][4], cc[4][4], cm[4][3], cam_xyz[4][3], num;
   double ab[] = {1, 1, 1, 1}, asn[] = {0, 0, 0, 0}, xyz[] = {1, 1, 1};
   unsigned sony_curve[] = {0, 0, 0, 0, 0, 4095};
-  unsigned *buf, sony_offset = 0, sony_length = 0, sony_key = 0;
   struct jhead jh;
 
   ushort *rafdata;
@@ -746,15 +745,6 @@ int LibRaw::parse_tiff_ifd(INT64 base)
       for (i = 0; i < 5; i++)
         for (j = sony_curve[i] + 1; j <= (int)sony_curve[i + 1]; j++)
           curve[j] = curve[j - 1] + (1 << i);
-      break;
-    case 0x7200: // 29184, Sony SR2Private
-      sony_offset = get4();
-      break;
-    case 0x7201: // 29185, Sony SR2Private
-      sony_length = get4();
-      break;
-    case 0x7221: // 29217, Sony SR2Private
-      sony_key = get4();
       break;
     case 0x7250: // 29264, Sony SR2Private
       parse_minolta(ftell(ifp));
@@ -1585,63 +1575,8 @@ int LibRaw::parse_tiff_ifd(INT64 base)
 
               if (!strncmp(mbuf, "SR2 ", 4))
               {
-                order = 0x4d4d;
-                MakN_length = get4();
-                MakN_order = get2();
-                pos_in_original_raw = get4();
-                order = MakN_order;
-
-                unsigned *buf_SR2;
-                unsigned SR2SubIFDOffset = 0;
-                unsigned SR2SubIFDLength = 0;
-                unsigned SR2SubIFDKey = 0;
-                {
-                  INT64 _base = curr_pos + 6 - pos_in_original_raw;
-                  unsigned _entries, _tag, _type, _len;
-				  INT64 _save;
-				  _entries = get2();
-                  while (_entries--)
-                  {
-                    tiff_get(_base, &_tag, &_type, &_len, &_save);
-                    if (callbacks.exif_cb)
-                    {
-                      INT64 _savepos = ftell(ifp);
-                      callbacks.exif_cb(callbacks.exifparser_data, tag | 0x60000,
-                                        _type, _len, order, ifp, base);
-                      fseek(ifp, _savepos, SEEK_SET);
-                    }
-
-                    if (_tag == 0x7200)
-                    {
-                      SR2SubIFDOffset = get4();
-                    }
-                    else if (_tag == 0x7201)
-                    {
-                      SR2SubIFDLength = get4();
-                    }
-                    else if (_tag == 0x7221)
-                    {
-                      SR2SubIFDKey = get4();
-                    }
-                    fseek(ifp, _save, SEEK_SET);
-                  }
-                }
-
-                if (SR2SubIFDLength && (SR2SubIFDLength < 10240000) &&
-                    (buf_SR2 = (unsigned *)calloc(SR2SubIFDLength + 1024,1)))
-                { // 1024b for safety
-                  fseek(ifp, SR2SubIFDOffset + base, SEEK_SET);
-                  int items = fread(buf_SR2, 1, SR2SubIFDLength, ifp);
-				  if (items == SR2SubIFDLength)
-				  {
-					  sony_decrypt(buf_SR2, SR2SubIFDLength / 4, 1, SR2SubIFDKey);
-					  parseSonySR2((uchar *)buf_SR2, SR2SubIFDOffset,
-						  SR2SubIFDLength, AdobeDNG);
-				  }
-                  free(buf_SR2);
-                }
-
-              } /* SR2 processed */
+                // Encrypted Sony SR2 payloads intentionally remain opaque.
+              }
               break;
             }
           }
@@ -1739,18 +1674,6 @@ int LibRaw::parse_tiff_ifd(INT64 base)
         fgets(model2, 64, ifp);
     }
     fseek(ifp, save, SEEK_SET);
-  }
-  if (sony_length && sony_length < 10240000 &&
-      (buf = (unsigned *)calloc(sony_length, 1)))
-  {
-    fseek(ifp, sony_offset, SEEK_SET);
-    int items = fread(buf, 1, sony_length, ifp);
-	if (items == sony_length)
-	{
-		sony_decrypt(buf, sony_length / 4, 1, sony_key);
-		parseSonySR2((uchar *)buf, sony_offset, sony_length, nonDNG);
-	}
-    free(buf);
   }
   for (i = 0; i < colors && i < 4; i++)
     FORCC cc[i][c] *= ab[i];

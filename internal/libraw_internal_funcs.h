@@ -48,8 +48,6 @@ it under the terms of the one of two licenses as you choose:
 	static libraw_static_table_t Oly_wb_list2;
 
 	static libraw_static_table_t Sony_SRF_wb_list;
-	static libraw_static_table_t Sony_SR2_wb_list;
-	static libraw_static_table_t Sony_SR2_wb_list1;
 /*  */
 	int	find_ifd_by_offset(INT64 );
 	void 	libraw_swab(void *arr, int len);
@@ -110,7 +108,6 @@ it under the terms of the one of two licenses as you choose:
                                uchar *&table_buf_0x9406, ushort &table_buf_0x9406_len,
                                uchar *&table_buf_0x940c, ushort &table_buf_0x940c_len,
                                uchar *&table_buf_0x940e, ushort &table_buf_0x940e_len);
-	void	parseSonySR2 (uchar *cbuf_SR2, unsigned SR2SubIFDOffset, unsigned SR2SubIFDLength, unsigned dng_writer);
 	void	parseSonySRF (unsigned len);
 	void	parseFujiMakernotes (unsigned tag, unsigned type, unsigned len, unsigned dng_writer);
 	const char* HassyRawFormat_idx2HR(unsigned idx);
