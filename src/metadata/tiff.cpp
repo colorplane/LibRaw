@@ -746,23 +746,6 @@ int LibRaw::parse_tiff_ifd(INT64 base)
         for (j = sony_curve[i] + 1; j <= (int)sony_curve[i + 1]; j++)
           curve[j] = curve[j - 1] + (1 << i);
       break;
-    case 0x7250: // 29264, Sony SR2Private
-      parse_minolta(ftell(ifp));
-      raw_width = 0;
-      break;
-    case 0x7303: // 29443, Sony SR2SubIFD
-      FORC4 cam_mul[GRBG_2_RGBG(c)] = get2();
-      break;
-    case 0x7313: // 29459, Sony SR2SubIFD
-      FORC4 cam_mul[RGGB_2_RGBG(c)] = get2();
-      break;
-    case 0x7310: // 29456, Sony SR2SubIFD
-      FORC4 cblack[RGGB_2_RGBG(c)] = get2();
-      i = cblack[3];
-      FORC3 if (i > (int)cblack[c]) i = cblack[c];
-      FORC4 cblack[c] -= i;
-      black = i;
-      break;
     case 0x827d: /* 33405, Model2 */
                  /*
                   for Kodak ProBack 645 PB645x-yyyy 'x' is:
