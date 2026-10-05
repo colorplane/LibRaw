@@ -20,20 +20,19 @@
 
 void LibRaw::unpacked_load_raw()
 {
-  int row, col, bits = 0;
-  while (1 << ++bits < (int)maximum)
-    ;
   read_shorts(raw_image, raw_width * raw_height);
   fseek(ifp, -2, SEEK_CUR); // avoid EOF error
-  if (maximum < 0xffff || load_flags)
-    for (row = 0; row < raw_height; row++)
+  checkCancel();
+  // Colorplane retains the sensor samples without a per-pixel range-validation
+  // pass. Unshifted data is already decoded by read_shorts(); only formats
+  // with a recorded bit shift require another pass over the plane.
+  if (load_flags)
+    for (int row = 0; row < raw_height; row++)
     {
       checkCancel();
-      for (col = 0; col < raw_width; col++)
-        if ((RAW(row, col) >>= load_flags) >> bits &&
-            (unsigned)(row - top_margin) < height &&
-            (unsigned)(col - left_margin) < width)
-          derror();
+      ushort *pixels = raw_image + size_t(row) * raw_width;
+      for (int col = 0; col < raw_width; col++)
+        pixels[col] >>= load_flags;
     }
 }
 

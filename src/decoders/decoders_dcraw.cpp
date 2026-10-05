@@ -17,6 +17,10 @@
  */
 
 #include "../../internal/dcraw_defs.h"
+
+#ifdef __wasm_simd128__
+#include <wasm_simd128.h>
+#endif
 #include "../../internal/libraw_cameraids.h"
 
 unsigned LibRaw::getbithuff(int nbits, ushort *huff)
@@ -1392,6 +1396,96 @@ void LibRaw::sony_arw2_load_raw()
   data = (uchar *)calloc(raw_width + 1,1);
   try
   {
+    if (!(imgdata.rawparams.specials & LIBRAW_RAWSPECIAL_SONYARW2_ALLFLAGS))
+    {
+      // Decode ordinary Sony compressed blocks directly into their Bayer row.
+      // Diagnostic modes below retain their separate intermediate-pixel path.
+      for (row = 0; row < height; row++)
+      {
+        checkCancel();
+        fread(data, 1, raw_width, ifp);
+        ushort *output = raw_image + size_t(row) * raw_width;
+        for (dp = data, col = 0; col < raw_width - 30; dp += 16)
+        {
+          const unsigned header = sget4(dp);
+          const unsigned block_max = header & 0x7ff;
+          const unsigned block_min = (header >> 11) & 0x7ff;
+          const unsigned max_index = (header >> 22) & 0xf;
+          const unsigned min_index = (header >> 26) & 0xf;
+          unsigned shift = 0;
+          while (shift < 4 && int(0x80u << shift) <= int(block_max) - int(block_min))
+            shift++;
+          if (max_index != min_index)
+          {
+            ushort deltas[16];
+#ifdef __wasm_simd128__
+            if (order == 0x4949)
+            {
+              // Fourteen packed 7-bit deltas occupy bits 30 through 127.
+              // Align their byte pairs in two vectors; lane multipliers make
+              // the differing bit offsets one shared right shift.
+              const v128_t packed = wasm_v128_load(dp);
+              const v128_t zero = wasm_i16x8_splat(0);
+              v128_t lower = wasm_i8x16_shuffle(packed, zero,
+                3,4, 4,5, 5,6, 6,7, 7,8, 8,9, 9,10, 9,10);
+              v128_t upper = wasm_i8x16_shuffle(packed, zero,
+                10,11, 11,12, 12,13, 13,14, 14,15, 15,16, 16,16, 16,16);
+              lower = wasm_i16x8_mul(lower, wasm_i16x8_make(2,4,8,16,32,64,128,1));
+              upper = wasm_i16x8_mul(upper, wasm_i16x8_make(2,4,8,16,32,64,0,0));
+              const v128_t delta_mask = wasm_i16x8_splat(127);
+              lower = wasm_v128_and(wasm_u16x8_shr(lower, 7), delta_mask);
+              upper = wasm_v128_and(wasm_u16x8_shr(upper, 7), delta_mask);
+              const v128_t base = wasm_i16x8_splat(block_min);
+              const v128_t limit = wasm_i16x8_splat(2047);
+              lower = wasm_u16x8_min(wasm_i16x8_add(wasm_i16x8_shl(lower, shift), base), limit);
+              upper = wasm_u16x8_min(wasm_i16x8_add(wasm_i16x8_shl(upper, shift), base), limit);
+              wasm_v128_store(deltas, lower);
+              wasm_v128_store(deltas + 8, upper);
+            }
+            else
+#endif
+            {
+              for (unsigned delta = 0; delta < 14; delta++)
+              {
+                const unsigned bit_offset = 30 + delta * 7;
+                const unsigned sample = ((sget2(dp + (bit_offset >> 3)) >> (bit_offset & 7) & 127) << shift) + block_min;
+                deltas[delta] = MIN(sample, 2047u);
+              }
+            }
+            output[col + max_index * 2] = curve[block_max << 1];
+            output[col + min_index * 2] = curve[block_min << 1];
+            const unsigned first = MIN(max_index, min_index);
+            const unsigned second = MAX(max_index, min_index) - 1;
+            for (unsigned delta = 0; delta < 14; delta++)
+            {
+              const unsigned pixel = delta + (delta >= first) + (delta >= second);
+              output[col + pixel * 2] = curve[deltas[delta] << 1];
+            }
+            col += (col & 1) ? 31 : 1;
+            continue;
+          }
+          unsigned offset = 30;
+          for (unsigned pixel = 0; pixel < 16; pixel++)
+          {
+            unsigned sample;
+            if (pixel == max_index)
+              sample = block_max;
+            else if (pixel == min_index)
+              sample = block_min;
+            else
+            {
+              sample = ((sget2(dp + (offset >> 3)) >> (offset & 7) & 0x7f) << shift) + block_min;
+              sample = MIN(sample, 0x7ffu);
+              offset += 7;
+            }
+            output[col + pixel * 2] = curve[sample << 1];
+          }
+          col += (col & 1) ? 31 : 1;
+        }
+      }
+      free(data);
+      return;
+    }
     for (row = 0; row < height; row++)
     {
       checkCancel();
@@ -1580,4 +1674,3 @@ void LibRaw::samsung2_load_raw()
     }
   }
 }
-
