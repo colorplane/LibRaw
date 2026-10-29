@@ -5,20 +5,30 @@
 #include <cstdio>
 #include <vector>
 
+class SerialStream : public LibRaw_buffer_datastream
+{
+public:
+  using LibRaw_buffer_datastream::LibRaw_buffer_datastream;
+  const unsigned char *read_buffer(size_t) override { return nullptr; }
+};
+
 class SonyDecoder : public LibRaw
 {
 public:
-  std::vector<unsigned short> decode(std::vector<unsigned char> &bytes, unsigned rows)
+  std::vector<unsigned short> decode(std::vector<unsigned char> &bytes, unsigned rows,
+                                    bool direct = true, bool cancelled = false)
   {
     LibRaw_buffer_datastream stream(bytes.data(), bytes.size());
+    SerialStream serial(bytes.data(), bytes.size());
     std::vector<unsigned short> output(64 * rows);
     imgdata.sizes.raw_width = imgdata.sizes.width = 64;
     imgdata.sizes.raw_height = imgdata.sizes.height = rows;
     imgdata.rawdata.raw_image = output.data();
     for (unsigned i = 0; i < 65536; i++)
       imgdata.color.curve[i] = (i * 7) & 0xffff;
-    libraw_internal_data.internal_data.input = &stream;
+    libraw_internal_data.internal_data.input = direct ? &stream : &serial;
     libraw_internal_data.unpacker_data.order = 0x4949;
+    if (cancelled) setCancelFlag();
     try { sony_arw2_load_raw(); }
     catch (...) {
       imgdata.rawdata.raw_image = nullptr;
@@ -73,8 +83,26 @@ int main()
         }
         expected.insert(expected.end(), row, row + 64);
       }
+  // Exceed the parallel dispatch threshold, with nontrivial row partitions.
+  const auto originalBytes = bytes;
+  const auto originalExpected = expected;
+  for (unsigned repeat = 0; repeat < 3; ++repeat) {
+    bytes.insert(bytes.end(), originalBytes.begin(), originalBytes.end());
+    expected.insert(expected.end(), originalExpected.begin(), originalExpected.end());
+  }
   SonyDecoder decoder;
   const auto actual = decoder.decode(bytes, unsigned(expected.size() / 64));
   assert(actual == expected);
+  assert(decoder.decode(bytes, unsigned(expected.size() / 64), false) == expected);
+  for (bool cancelled : {false, true}) {
+    auto input = bytes;
+    if (!cancelled) input.pop_back();
+    bool rejected = false;
+    try { decoder.decode(input, unsigned(expected.size() / 64), true, cancelled); }
+    catch (LibRaw_exceptions error) {
+      rejected = error == (cancelled ? LIBRAW_EXCEPTION_CANCELLED_BY_CALLBACK : LIBRAW_EXCEPTION_IO_EOF);
+    }
+    assert(rejected);
+  }
   std::puts("Sony ARW2: all extrema positions, delta shifts, clipping, curve lookup, row interleaving passed.");
 }

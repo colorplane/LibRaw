@@ -110,6 +110,9 @@ public:
   virtual void buffering_off() {}
   virtual void buffering_on() {}
   virtual bool is_buffered() { return false; }
+  // Consume a contiguous immutable span without copying. A null result leaves
+  // the cursor unchanged and asks the caller to use the ordinary read path.
+  virtual const unsigned char *read_buffer(size_t) { return nullptr; }
   /* reimplement in subclass to use parallel access in xtrans_load_raw() if
    * OpenMP is not used */
   virtual int lock() { return 1; } /* success */
@@ -277,6 +280,13 @@ public:
   virtual int seek(INT64 o, int whence);
   virtual INT64 tell();
   virtual INT64 size() { return streamsize; }
+  const unsigned char *read_buffer(size_t bytes) override
+  {
+    if (streampos > streamsize || bytes > streamsize - streampos) return nullptr;
+    const unsigned char *result = buf + streampos;
+    streampos += bytes;
+    return result;
+  }
   virtual char *gets(char *s, int sz);
   virtual int scanf_one(const char *fmt, void *val);
   virtual int get_char()

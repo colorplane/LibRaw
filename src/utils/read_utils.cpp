@@ -16,6 +16,7 @@
 
  */
 
+#include "../../libraw/libraw_parallel.h"
 #include "../../internal/dcraw_defs.h"
 
 ushort LibRaw::sget2Rev(uchar *s) // specific to some Canon Makernotes fields,
@@ -169,6 +170,19 @@ double libraw_sgetreal_static(short _order, int type, uchar *s)
 
 void LibRaw::read_shorts(ushort *pixel, unsigned count)
 {
+  // Contiguous memory-backed RAW input can be copied in independent bands.
+  // Stream reads and errors remain on the owning LibRaw thread.
+  if (const uchar *source = ifp->read_buffer(size_t(count) * 2))
+  {
+    checkCancel();
+    const bool swap = (order == 0x4949) == (ntohs(0x1234) == 0x1234);
+    libraw_parallel_rows(count, size_t(count) * 2, [&](unsigned first, unsigned last) {
+      memcpy(pixel + first, source + size_t(first) * 2, size_t(last - first) * 2);
+      if (swap) libraw_swab(pixel + first, size_t(last - first) * 2);
+    });
+    checkCancel();
+    return;
+  }
   if ((unsigned)fread(pixel, 2, count, ifp) < count)
     derror();
   if ((order == 0x4949) == (ntohs(0x1234) == 0x1234))

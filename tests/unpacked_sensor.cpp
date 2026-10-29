@@ -54,7 +54,7 @@ public:
 
 int main()
 {
-  std::vector<unsigned short> samples(8 * 6);
+  std::vector<unsigned short> samples(8 * 32768);
   for (size_t i = 0; i < samples.size(); i++)
     samples[i] = (i * 2027) & 0xffff;
   // Values above the reported sensor white, including border values, remain

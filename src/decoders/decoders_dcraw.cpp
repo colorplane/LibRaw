@@ -16,6 +16,7 @@
 
  */
 
+#include "../../libraw/libraw_parallel.h"
 #include "../../internal/dcraw_defs.h"
 
 #ifdef __wasm_simd128__
@@ -1400,12 +1401,15 @@ void LibRaw::sony_arw2_load_raw()
     {
       // Decode ordinary Sony compressed blocks directly into their Bayer row.
       // Diagnostic modes below retain their separate intermediate-pixel path.
-      for (row = 0; row < height; row++)
-      {
-        checkCancel();
-        fread(data, 1, raw_width, ifp);
+      auto decodeRow = [&](uchar *rowData, unsigned row) {
+        auto readPair = [&](uchar *address) {
+          if (address + 1 < rowData + raw_width) return sget2(address);
+          uchar padded[2] = {*address, 0};
+          return sget2(padded);
+        };
         ushort *output = raw_image + size_t(row) * raw_width;
-        for (dp = data, col = 0; col < raw_width - 30; dp += 16)
+        int col = 0;
+        for (uchar *dp = rowData; col < raw_width - 30; dp += 16)
         {
           const unsigned header = sget4(dp);
           const unsigned block_max = header & 0x7ff;
@@ -1448,7 +1452,7 @@ void LibRaw::sony_arw2_load_raw()
               for (unsigned delta = 0; delta < 14; delta++)
               {
                 const unsigned bit_offset = 30 + delta * 7;
-                const unsigned sample = ((sget2(dp + (bit_offset >> 3)) >> (bit_offset & 7) & 127) << shift) + block_min;
+                const unsigned sample = ((readPair(dp + (bit_offset >> 3)) >> (bit_offset & 7) & 127) << shift) + block_min;
                 deltas[delta] = MIN(sample, 2047u);
               }
             }
@@ -1474,13 +1478,33 @@ void LibRaw::sony_arw2_load_raw()
               sample = block_min;
             else
             {
-              sample = ((sget2(dp + (offset >> 3)) >> (offset & 7) & 0x7f) << shift) + block_min;
+              sample = ((readPair(dp + (offset >> 3)) >> (offset & 7) & 0x7f) << shift) + block_min;
               sample = MIN(sample, 0x7ffu);
               offset += 7;
             }
             output[col + pixel * 2] = curve[sample << 1];
           }
           col += (col & 1) ? 31 : 1;
+        }
+      };
+      checkCancel();
+      const size_t packedBytes = size_t(raw_width) * height;
+      const uchar *packed = ifp->read_buffer(packedBytes);
+      if (packed)
+      {
+        libraw_parallel_rows(height, packedBytes, [&](unsigned first, unsigned last) {
+          for (unsigned row = first; row < last; ++row)
+            decodeRow(const_cast<uchar *>(packed + size_t(row) * raw_width), row);
+        });
+        checkCancel();
+      }
+      else
+      {
+        for (row = 0; row < height; ++row)
+        {
+          checkCancel();
+          if (fread(data, 1, raw_width, ifp) != raw_width) derror();
+          decodeRow(data, row);
         }
       }
       free(data);
