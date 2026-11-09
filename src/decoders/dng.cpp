@@ -16,6 +16,9 @@
 
  */
 
+#include "../../libraw/libraw_parallel.h"
+#include "../../internal/dng_tile_decoder.h"
+#include <memory>
 #include "../../internal/dcraw_defs.h"
 
 void LibRaw::vc5_dng_load_raw_placeholder()
@@ -55,6 +58,76 @@ void LibRaw::adobe_copy_pixel(unsigned row, unsigned col, ushort **rp)
 }
 void LibRaw::lossless_dng_load_raw()
 {
+#if defined(__EMSCRIPTEN_PTHREADS__) && !defined(LIBRAW_NOTHREADS)
+  // TIFF tiles are independent JPEG streams. Only the owner reads the input
+  // tables and calls callbacks; workers borrow immutable, bounded tile spans.
+  if (raw_image && filters && tiff_samples == 1 && tile_width > 0 &&
+      tile_length > 0 && tile_length < INT_MAX && tile_width <= 65535 &&
+      tile_length <= 65535 && tile_width <= raw_width)
+  {
+    const unsigned columns = (unsigned(raw_width) + tile_width - 1) / tile_width;
+    const unsigned rows = (unsigned(raw_height) + tile_length - 1) / tile_length;
+    const size_t count = size_t(columns) * rows;
+    const int index = find_ifd_by_offset(data_offset);
+    if (count > 1 && count <= 16384 && index >= 0 && index < tiff_nifds &&
+        tiff_ifd[index].tile_offsets_count == count &&
+        tiff_ifd[index].tile_byte_counts_count == count &&
+        libraw_parallel_count(unsigned(count), size_t(raw_width) * raw_height * 2) > 1)
+    {
+      const INT64 saved = ftell(ifp), length = ifp->size();
+      const INT64 sizesOffset = tiff_ifd[index].bytes;
+      if (length > 0 && sizesOffset > 0 && saved >= 0 &&
+          size_t(length) >= count * 4 &&
+          size_t(saved) <= size_t(length) - count * 4 &&
+          size_t(sizesOffset) <= size_t(length) - count * 4)
+      {
+        checkCancel();
+        fseek(ifp, 0, SEEK_SET);
+        const uchar *source = ifp->read_buffer(size_t(length));
+        fseek(ifp, saved, SEEK_SET);
+        if (source)
+        {
+          struct Tile { const uchar *bytes; size_t length; };
+          std::vector<Tile> tiles;
+          tiles.reserve(count);
+          auto probe = std::unique_ptr<LibRaw_dng_tile_decoder>(new LibRaw_dng_tile_decoder(dng_version));
+          bool supported = true;
+          for (size_t i = 0; i < count; ++i)
+          {
+            checkCancel();
+            const unsigned offset = sget4(const_cast<uchar *>(source + saved + i * 4));
+            const unsigned bytes = sget4(const_cast<uchar *>(source + sizesOffset + i * 4));
+            if (!bytes || size_t(offset) > size_t(length) || bytes > size_t(length) - offset)
+              throw LIBRAW_EXCEPTION_IO_EOF;
+            if (!probe->supports(source + offset, bytes, tile_width, tile_length, raw_width))
+            {
+              supported = false;
+              break;
+            }
+            tiles.push_back({source + offset, bytes});
+          }
+          if (supported)
+          {
+            libraw_parallel_rows(unsigned(count), size_t(raw_width) * raw_height * 2,
+                [&](unsigned first, unsigned last) {
+              auto decoder = std::unique_ptr<LibRaw_dng_tile_decoder>(new LibRaw_dng_tile_decoder(dng_version));
+              for (unsigned i = first; i < last; ++i)
+              {
+                if (!first) checkCancel(); // The first band runs on the owner.
+                decoder->decode(tiles[i].bytes, tiles[i].length, tile_width, tile_length,
+                    (i % columns) * tile_width, (i / columns) * tile_length,
+                    raw_width, raw_height, curve, raw_image);
+              }
+            });
+            checkCancel();
+            fseek(ifp, saved + count * 4, SEEK_SET);
+            return;
+          }
+        }
+      }
+    }
+  }
+#endif
   unsigned trow = 0, tcol = 0, jwide, jrow, jcol, row, col, i, j;
   INT64 save;
   struct jhead jh;

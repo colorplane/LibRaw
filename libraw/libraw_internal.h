@@ -247,6 +247,8 @@ struct tiff_ifd_t
   libraw_dng_color_t dng_color[2];
   libraw_dng_levels_t dng_levels;
   int newsubfiletype;
+  // Nonzero only for 32-bit TIFF tile tables supported by the parallel reader.
+  unsigned tile_offsets_count, tile_byte_counts_count;
 };
 
 struct jhead

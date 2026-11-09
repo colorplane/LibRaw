@@ -677,6 +677,7 @@ int LibRaw::parse_tiff_ifd(INT64 base)
       tiff_ifd[ifd].t_tile_length = getint(type);
       break;
     case 0x0144: /* 324, TileOffsets */
+      tiff_ifd[ifd].tile_offsets_count = type == 4 ? len : 0;
       tiff_ifd[ifd].offset = len > 1 ? ftell(ifp) : get4(); // FIXME: get8 for BigTIFF
       if (len == 1)
         tiff_ifd[ifd].t_tile_width = tiff_ifd[ifd].t_tile_length = 0;
@@ -687,6 +688,7 @@ int LibRaw::parse_tiff_ifd(INT64 base)
       }
       break;
     case 0x0145: // 325
+      tiff_ifd[ifd].tile_byte_counts_count = type == 4 ? len : 0;
       tiff_ifd[ifd].bytes = len > 1 ? ftell(ifp) : get4(); // FIXME: get8 for BigTIFF
       break;
     case 0x014a: /* 330, SubIFDs */

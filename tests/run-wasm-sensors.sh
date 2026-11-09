@@ -13,7 +13,7 @@ for test_name in unpacked_sensor sony_arw2_sensor parallel_rows; do
     '-sPTHREAD_POOL_SIZE=Math.max(0,require("os").cpus().length-1)' \
     -sPTHREAD_POOL_SIZE_STRICT=2 \
     -I"$wasm_root/includes" -I"$test_root/.." \
-    "$test_root/$test_name.cpp" "$wasm_root/libs/libraw.a" \
+    "$test_root/$test_name.cpp" "$wasm_root/libs/libraw_r.a" \
     "$wasm_root/libs/liblcms2.a" -o "$output_directory/$test_name.cjs"
   node "$output_directory/$test_name.cjs"
 done
